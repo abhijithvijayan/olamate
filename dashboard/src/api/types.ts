@@ -168,3 +168,114 @@ export interface Stats {
   last_seen: number | null;
   telemetry_rows: number;
 }
+
+// --- Diagnostics / Scooter types ---
+
+export interface ScooterConnection {
+  connected: boolean;
+  address: string | null;
+  error?: string;
+}
+
+export interface OperationMode {
+  mode: string;
+  mode_value: number;
+  modified_ts: number | null;
+  modified_ts_str: string | null;
+  modified_by: string | null;
+}
+
+export interface SwUpdateStatus {
+  state: string;
+  state_value: number;
+  message: string | null;
+}
+
+export interface EcosDyno {
+  ecos1: string | null;
+  ecos2: string | null;
+  dyno: string | null;
+}
+
+export interface ScooterInfo {
+  sw_version: string | null;
+  aosp_version: string | null;
+  operation_mode: OperationMode | null;
+  identifiers: string | null;
+  ecos_dyno: EcosDyno | null;
+  certs_valid: boolean | null;
+  sw_update_status: SwUpdateStatus | null;
+}
+
+export interface ScooterCommand {
+  id: string;
+  name: string;
+  hex: string;
+  blocked: boolean;
+}
+
+export interface CommandCategory {
+  name: string;
+  commands: ScooterCommand[];
+}
+
+export interface CommandResult {
+  ok: boolean;
+  command: string;
+  name: string;
+  hex: string;
+  sent: number;
+  target: number;
+  error?: string;
+}
+
+// --- UDS Diagnostics types ---
+
+export interface ECUInfo {
+  id: string;
+  name: string;
+  request_can_id: string;
+  response_can_id: string;
+}
+
+export interface DIDEntry {
+  name: string;
+  did_hex: string;
+  did: number;
+  description: string;
+  ecus: string[];
+  category: string;
+  category_label: string;
+}
+
+export interface UDSReadResult {
+  success: boolean;
+  ecu: string;
+  did: string;
+  description?: string;
+  error?: string;
+  raw_hex?: string;
+  data_hex?: string;
+  data_ascii?: string;
+  data_bytes?: number[];
+  nrc?: number;
+  nrc_name?: string;
+  service?: string;
+}
+
+export interface DTCEntry {
+  code: string;
+  status: string;
+  active: boolean;
+  stored: boolean;
+}
+
+export interface DTCResult {
+  success: boolean;
+  ecu: string;
+  ecu_name?: string;
+  error?: string;
+  raw_hex?: string;
+  dtc_count?: number;
+  dtcs: DTCEntry[];
+}

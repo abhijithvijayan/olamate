@@ -12,13 +12,14 @@ from metrics import (
     finalize_session,
     parse_snapshot,
 )
+import scooter
 
 app = FastAPI(title="OlaMate API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$",
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -136,6 +137,77 @@ async def battery_cells() -> dict[str, Any]:
     if row is None:
         raise HTTPException(status_code=404, detail="No telemetry recorded yet")
     return cell_report(row)
+
+
+@app.get("/api/scooter/connection")
+async def scooter_connection() -> dict[str, Any]:
+    return await scooter.check_connection()
+
+
+@app.get("/api/scooter/info")
+async def scooter_info() -> dict[str, Any]:
+    conn = await scooter.check_connection()
+    if not conn["connected"]:
+        raise HTTPException(status_code=503, detail=conn.get("error", "Scooter not reachable"))
+    return await scooter.get_vehicle_info()
+
+
+@app.get("/api/scooter/commands")
+async def scooter_commands() -> list[dict[str, Any]]:
+    return scooter.get_command_list()
+
+
+@app.post("/api/scooter/command")
+async def scooter_command(body: dict[str, Any]) -> dict[str, Any]:
+    command_id = body.get("command")
+    if not command_id or not isinstance(command_id, str):
+        raise HTTPException(status_code=400, detail="Missing 'command' field")
+    repeat = body.get("repeat")
+    interval_ms = body.get("interval_ms")
+    result = await scooter.send_command(command_id, repeat, interval_ms)
+    if not result["ok"]:
+        raise HTTPException(status_code=400, detail=result.get("error", "Command failed"))
+    return result
+
+
+@app.get("/api/scooter/ecus")
+async def scooter_ecus() -> list[dict[str, Any]]:
+    return scooter.get_ecus()
+
+
+@app.get("/api/scooter/dids")
+async def scooter_dids() -> list[dict[str, Any]]:
+    return scooter.get_dids()
+
+
+@app.post("/api/scooter/read-did")
+async def scooter_read_did(body: dict[str, Any]) -> dict[str, Any]:
+    ecu = body.get("ecu", "").lower()
+    did_name = body.get("did_name")
+    did_hex = body.get("did_hex")
+
+    if did_name:
+        from collector.uds import DID_BY_NAME
+        entry = DID_BY_NAME.get(did_name)
+        if entry is None:
+            raise HTTPException(status_code=400, detail=f"Unknown DID name: {did_name}")
+        did = entry.did
+    elif did_hex:
+        try:
+            did = int(did_hex, 16)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid hex DID: {did_hex}")
+    else:
+        raise HTTPException(status_code=400, detail="Provide did_name or did_hex")
+
+    result = await scooter.read_did(ecu, did)
+    return result
+
+
+@app.get("/api/scooter/dtc/{ecu}")
+async def scooter_dtc(ecu: str) -> dict[str, Any]:
+    result = await scooter.read_dtc(ecu.lower())
+    return result
 
 
 @app.get("/api/stats")

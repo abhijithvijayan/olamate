@@ -57,15 +57,19 @@ Inspired by [TeslaMate](https://github.com/adriankumpf/teslamate).
 ```
 Scooter (gRPC @ $SCOOTER_IP:50005)
     │  CanDumpStream (streaming CAN frames)
+    │  GetSwVersion, GetVehicleOperationMode, ...
+    │  ExecuteADBCommand (cansend for controls)
     ▼
-Collector (Python)
-    │  Decodes CAN → named signals
-    │  Detects ride/charge sessions
-    ▼
-SQLite (olamate.db)
-    │
-    ▼
-FastAPI → React Dashboard
+Collector (Python)          FastAPI
+    │  Decodes CAN → signals     │  Vehicle info (gRPC RPCs)
+    │  Detects sessions           │  Command sending (cansend)
+    ▼                             │  Telemetry reads (SQLite)
+SQLite (olamate.db)               │
+    │                             │
+    └─────────────────────────────┘
+                  │
+                  ▼
+           React Dashboard
 ```
 
 ## Dashboard
@@ -77,6 +81,8 @@ FastAPI → React Dashboard
 | **Charges** | Charge session history with SOC curve and voltage |
 | **Battery Health** | SOH trend, 14-cell voltage bars, cell spread, temp heatmap |
 | **Live** | Real-time 1s polling — all cells, pack gauges, all temps |
+| **Diagnostics** | UDS reads (ReadDID by name or hex), fault codes (DTC), vehicle info — SW/AOSP versions, operation mode, OTA status, ECOS/Dyno flags, certs |
+| **Controls** | 68 CommandFromHMI commands in 9 categories — lock/unlock, lights, indicators, smart lights, drive modes, regen, safety features, alarm |
 
 ### Overview
 
@@ -102,12 +108,22 @@ FastAPI → React Dashboard
 
 <p align="center"><img src="screenshots/live.png" alt="Live" /></p>
 
+### Diagnostics
+
+<p align="center"><img src="screenshots/diagnostics.png" alt="Diagnostics" /></p>
+
+### Controls
+
+<p align="center"><img src="screenshots/controls.png" alt="Controls" /></p>
+
 ## Data Collected
 
 - **Battery:** 14 individual cell voltages, SOC, SOH, pack voltage, current, 6 temperature sensors
 - **Motor:** speed, RPM, MCU temperature, motor temperature
 - **Vehicle:** odometer, range per mode (normal/sport/hyper), side stand, indicators
 - **Safety:** regen availability, hill hold, fall detection, tow/theft detection
+- **UDS diagnostics:** read any DID from BMS/VCU/MCU (VIN, feature flags, torque maps, BMS config), read DTCs
+- **Commands:** 68 CommandFromHMI commands (lock/unlock, lights, indicators, drive modes, regen, safety features)
 
 ## Quick Start
 
@@ -186,15 +202,18 @@ olamate/
     can_decoder.py    — CAN frame decoder (18 messages, ~60 signals)
     database.py       — SQLite schema (telemetry, sessions, snapshots)
     main.py           — gRPC streaming client, session detection
+    uds.py            — UDS (ISO 14229) protocol: ECU CAN IDs, DID catalog, frame building, response parsing
+    commands.py       — CommandFromHMI enum (99 values), 68 dashboard commands, blocked list
     tests/            — decoder unit tests
   api/
-    main.py           — FastAPI endpoints (7 routes)
+    main.py           — FastAPI endpoints (telemetry, diagnostics, controls)
     db.py             — async SQLite reads (read-only)
     metrics.py        — cell analysis, session finalization, downsampling
+    scooter.py        — gRPC client for vehicle info, UDS reads, command sending
     tests/            — API tests
   dashboard/
     src/
-      pages/          — Overview, Rides, Charges, BatteryHealth, Live
+      pages/          — Overview, Rides, Charges, BatteryHealth, Live, Diagnostics, Controls
       components/     — SocGauge, CellBarChart, TempHeatmap, TimeSeriesChart, ...
       api/            — typed fetch client + React hooks
   proto/
@@ -230,7 +249,9 @@ The battery pack is 14S NMC with individual cell voltages on CAN IDs 0x1A5–0x1
 
 ## Safety
 
-- **Read-only** — the collector never writes CAN frames or sends commands to the scooter
+- The **collector** is read-only — it never writes CAN frames or sends commands to the scooter
+- The **Diagnostics** page performs read-only UDS operations (ReadDataByIdentifier, ReadDTCInformation). No security access or write operations. Programming session (0x02) is blocked
+- The **Controls** page sends commands via the same CAN channel the head unit itself uses (0x6BC). Dangerous commands (reboot, OTA, profile delete) are blocked — 8 blocked, 68 allowed
 - The gRPC service is a factory diagnostic tool shipped by Ola Electric in the stock firmware
 - No personal data (VIN, Wi-Fi credentials) is stored or exposed
 
